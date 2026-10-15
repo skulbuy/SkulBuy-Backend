@@ -13,6 +13,5 @@ python-multipart>=0.0.9
 email-validator>=2.1.0
 httpx>=0.27.0
 alembic>=1.13.0
-psycopg[binary]
-psycopg2
-psycopg
+psycopg2-binary
+
