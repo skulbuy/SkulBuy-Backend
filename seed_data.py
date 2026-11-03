@@ -95,6 +95,35 @@ def run_seed(db: Session = None):
             db.commit()
             print(f"   + Created Seller: {seller.email} (Password: Password123!)")
 
+        print(">> Seeding Master Admin User (skuladmin / skull)...")
+        admin_user = db.query(models.User).filter(
+            (models.User.username == "skuladmin") | (models.User.email == "skuladmin@skulbuy.com")
+        ).first()
+        if not admin_user:
+            admin_user = models.User(
+                id=uuid.uuid4(),
+                email="skuladmin@skulbuy.com",
+                username="skuladmin",
+                full_name="Master Platform Administrator",
+                role=models.UserRole.ADMIN,
+                status=models.UserStatus.ACTIVE,
+                is_verified=True,
+                password_hash=utils.hash_password("skull"),
+                school_name="FUT Minna",
+                location="Main Administrative Complex",
+                wallet_balance_kobo=50000000, # 500,000 NGN
+                points=5000,
+            )
+            db.add(admin_user)
+            db.commit()
+            print("   + Created Master Admin User: username='skuladmin', password='skull'")
+        else:
+            admin_user.password_hash = utils.hash_password("skull")
+            admin_user.role = models.UserRole.ADMIN
+            admin_user.username = "skuladmin"
+            db.commit()
+            print("   + Updated Master Admin User credentials: username='skuladmin', password='skull'")
+
         print(">> Seeding Starter Campus Listings...")
         products_data = [
             {

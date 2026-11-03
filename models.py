@@ -322,13 +322,34 @@ class WalletTransaction(Base):
     user = relationship("User", back_populates="wallet_transactions")
 
 
+class University(Base):
+    __tablename__ = "universities"
+
+    id = Column(Uuid, primary_key=True, default=uuid.uuid4, index=True)
+    name = Column(String(200), nullable=False)
+    short_name = Column(String(50), unique=True, nullable=False, index=True)
+    city = Column(String(100), nullable=False)
+    state = Column(String(100), nullable=False)
+    type = Column(String(50), default="Federal", nullable=False)
+    student_count = Column(Integer, default=25000, nullable=False)
+    logo_url = Column(String(500), nullable=True)
+    lat = Column(Float, default=9.5312, nullable=True)
+    lng = Column(Float, default=6.4529, nullable=True)
+    campuses_json = Column(JSON, default=list, nullable=True)
+    is_active = Column(Boolean, default=True, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
 class PointsLedger(Base):
     __tablename__ = "points_ledger"
 
     id = Column(Uuid, primary_key=True, default=uuid.uuid4, index=True)
     user_id = Column(Uuid, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
-    amount = Column(Integer, nullable=False)
-    reason = Column(String(255), nullable=False)
+    amount = Column(Integer, default=0, nullable=False)
+    points = Column(Integer, default=0, nullable=True)
+    action = Column(String(100), nullable=True)
+    reason = Column(String(255), default="Campus Activity Reward", nullable=False)
+    description = Column(String(255), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     user = relationship("User", back_populates="points_ledger")
@@ -339,8 +360,13 @@ class DailyReward(Base):
 
     id = Column(Uuid, primary_key=True, default=uuid.uuid4, index=True)
     user_id = Column(Uuid, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
-    reward_date = Column(String(20), nullable=False, index=True)  # YYYY-MM-DD
-    amount_kobo = Column(BigInteger, default=1000, nullable=False)  # 10 NGN = 1000 kobo
+    reward_date = Column(String(20), nullable=True, index=True)  # YYYY-MM-DD
+    claim_date = Column(String(20), nullable=True, index=True)
+    day_number = Column(Integer, default=1, nullable=True)
+    reward_type = Column(String(30), default="points", nullable=True)
+    points_earned = Column(Integer, default=10, nullable=True)
+    cash_earned_kobo = Column(BigInteger, default=0, nullable=True)
+    amount_kobo = Column(BigInteger, default=1000, nullable=False)
     streak_count = Column(Integer, default=1, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
@@ -368,9 +394,10 @@ class ChatMessage(Base):
     id = Column(Uuid, primary_key=True, default=uuid.uuid4, index=True)
     chat_id = Column(Uuid, ForeignKey("chats.id", ondelete="CASCADE"), nullable=False, index=True)
     sender_id = Column(Uuid, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
-    content = Column(Text, nullable=False)
+    content = Column(Text, nullable=True)
+    text = Column(Text, nullable=True)
     offer_amount_kobo = Column(BigInteger, nullable=True)
-    offer_status = Column(String(30), default="none", nullable=False)  # none, pending, accepted, rejected
+    offer_status = Column(String(30), default="none", nullable=False)
     attachment_url = Column(String(500), nullable=True)
     is_read = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
@@ -386,11 +413,14 @@ class Community(Base):
     name = Column(String(150), nullable=False)
     slug = Column(String(150), unique=True, nullable=False, index=True)
     description = Column(Text, nullable=True)
-    category = Column(String(50), default="university", nullable=False)
-    university = Column(String(100), default="All", nullable=False)
+    category = Column(String(50), default="campus_life", nullable=False)
+    university = Column(String(100), default="FUTMINNA", nullable=False)
+    icon = Column(String(50), default="🎓", nullable=True)
+    banner_color = Column(String(100), default="from-amber-600 to-orange-600", nullable=True)
     image_url = Column(String(500), nullable=True)
     is_official = Column(Boolean, default=True, nullable=False)
     member_count = Column(Integer, default=1, nullable=False)
+    created_by = Column(Uuid, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
 
@@ -411,6 +441,8 @@ class CommunityMessage(Base):
     community_id = Column(Uuid, ForeignKey("communities.id", ondelete="CASCADE"), nullable=False, index=True)
     user_id = Column(Uuid, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     content = Column(Text, nullable=False)
+    message_type = Column(String(50), default="text", nullable=True)
+    shared_product_id = Column(Uuid, ForeignKey("products.id", ondelete="SET NULL"), nullable=True)
     reply_to_id = Column(String(100), nullable=True)
     reply_to_sender = Column(String(150), nullable=True)
     reply_to_content = Column(Text, nullable=True)
@@ -418,7 +450,8 @@ class CommunityMessage(Base):
     is_announcement = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
-    sender = relationship("User")
+    sender = relationship("User", foreign_keys=[user_id])
+    user = relationship("User", foreign_keys=[user_id], overlaps="sender")
 
 
 class CommunityReaction(Base):
@@ -428,6 +461,7 @@ class CommunityReaction(Base):
     message_id = Column(Uuid, ForeignKey("community_messages.id", ondelete="CASCADE"), nullable=False, index=True)
     user_id = Column(Uuid, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     reaction = Column(String(30), default="❤️", nullable=False)
+    emoji = Column(String(30), default="❤️", nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
 
@@ -439,17 +473,27 @@ class Meetup(Base):
     description = Column(Text, nullable=False)
     category = Column(String(100), nullable=False)
     university = Column(String(100), nullable=False, index=True)
+    campus = Column(String(150), nullable=True)
     campus_name = Column(String(150), nullable=True)
-    location = Column(String(255), nullable=False)
-    date_time = Column(String(100), nullable=False)
+    location = Column(String(255), default="Campus Hub", nullable=False)
+    location_name = Column(String(255), nullable=True)
+    date_time = Column(String(100), default="Upcoming", nullable=False)
+    event_date = Column(String(50), nullable=True)
+    event_time = Column(String(50), nullable=True)
     image_url = Column(String(500), nullable=True)
-    organizer_name = Column(String(150), nullable=False)
+    banner_image = Column(String(500), nullable=True)
+    organizer_id = Column(Uuid, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    organizer_name = Column(String(150), default="SkulBuy Campus Team", nullable=False)
     organizer_role = Column(String(100), default="Student Lead", nullable=False)
     is_featured = Column(Boolean, default=False, nullable=False)
     max_participants = Column(Integer, default=100, nullable=False)
+    max_attendees = Column(Integer, default=100, nullable=True)
+    status = Column(String(50), default="upcoming", nullable=True)
     lat = Column(Float, nullable=True)
     lng = Column(Float, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    organizer = relationship("User", foreign_keys=[organizer_id])
 
 
 class MeetupAttendee(Base):
@@ -458,18 +502,30 @@ class MeetupAttendee(Base):
     id = Column(Uuid, primary_key=True, default=uuid.uuid4, index=True)
     meetup_id = Column(Uuid, ForeignKey("meetups.id", ondelete="CASCADE"), nullable=False, index=True)
     user_id = Column(Uuid, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    status = Column(String(30), default="going", nullable=True)
     registered_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    user = relationship("User", foreign_keys=[user_id])
 
 
 class SkulBoxCycle(Base):
     __tablename__ = "skulbox_cycles"
 
     id = Column(Uuid, primary_key=True, default=uuid.uuid4, index=True)
-    name = Column(String(150), nullable=False)
-    cycle_month = Column(String(100), nullable=False)
-    close_date = Column(String(100), nullable=False)
-    delivery_window = Column(String(150), nullable=False)
+    name = Column(String(150), default="Semester SkulBox Cycle", nullable=False)
+    title = Column(String(150), nullable=True)
+    cycle_month = Column(String(100), default="Active Batch", nullable=False)
+    season_tag = Column(String(100), nullable=True)
+    university = Column(String(100), default="FUTMINNA", nullable=True)
+    start_date = Column(String(50), nullable=True)
+    close_date = Column(String(100), default="25th of the Month", nullable=False)
+    lock_date = Column(String(50), nullable=True)
+    delivery_window = Column(String(150), default="1st Week of Month", nullable=False)
+    delivery_date = Column(String(50), nullable=True)
+    pickup_location = Column(String(200), default="Campus SUB Hub", nullable=True)
     status = Column(String(50), default="open", nullable=False)
+    discount_pct = Column(Integer, default=25, nullable=True)
+    max_slots = Column(Integer, default=250, nullable=True)
     notes = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
@@ -480,11 +536,15 @@ class SkulBoxSubscription(Base):
     id = Column(Uuid, primary_key=True, default=uuid.uuid4, index=True)
     user_id = Column(Uuid, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     cycle_id = Column(Uuid, ForeignKey("skulbox_cycles.id", ondelete="CASCADE"), nullable=False, index=True)
-    package_type = Column(String(50), nullable=False)
-    package_name = Column(String(150), nullable=False)
-    total_amount_kobo = Column(BigInteger, nullable=False)
+    package_type = Column(String(50), default="25k", nullable=False)
+    tier_id = Column(String(50), nullable=True)
+    package_name = Column(String(150), default="Standard Student Box", nullable=False)
+    tier_name = Column(String(150), nullable=True)
+    total_amount_kobo = Column(BigInteger, default=2500000, nullable=False)
+    target_amount_kobo = Column(BigInteger, nullable=True)
     paid_amount_kobo = Column(BigInteger, default=0, nullable=False)
     payment_plan = Column(String(50), default="daily", nullable=False)
+    redemption_pin = Column(String(20), nullable=True)
     status = Column(String(50), default="active", nullable=False)
     delivery_location = Column(String(255), default="Gidan Kwano Campus", nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
@@ -501,7 +561,8 @@ class SkulBoxContribution(Base):
     user_id = Column(Uuid, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     amount_kobo = Column(BigInteger, nullable=False)
     payment_method = Column(String(50), nullable=False)
-    payment_reference = Column(String(100), nullable=False)
+    payment_reference = Column(String(100), default="SBX-REF", nullable=False)
+    reference = Column(String(100), nullable=True)
     status = Column(String(50), default="confirmed", nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 

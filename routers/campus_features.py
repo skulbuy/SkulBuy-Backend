@@ -166,8 +166,131 @@ CAMPUS_LOCATIONS_BY_UNI = {
 # ==========================================================
 
 @router.get("/universities")
-def list_universities():
-    return NIGERIAN_UNIVERSITIES
+def list_universities(db: Session = Depends(get_db)):
+    # Query database universities first, merging with defaults
+    db_unis = db.query(models.University).filter(models.University.is_active == True).all()
+    if not db_unis:
+        # Seed defaults into database table
+        for idx, udata in enumerate(NIGERIAN_UNIVERSITIES):
+            u_rec = models.University(
+                id=uuid.uuid4(),
+                name=udata["name"],
+                short_name=udata["short_name"],
+                city=udata["city"],
+                state=udata["state"],
+                type=udata["type"],
+                student_count=udata["student_count"],
+                logo_url=udata.get("logo_url"),
+                lat=udata.get("lat"),
+                lng=udata.get("lng"),
+                campuses_json=udata.get("campuses", []),
+                is_active=True
+            )
+            db.add(u_rec)
+        db.commit()
+        db_unis = db.query(models.University).filter(models.University.is_active == True).all()
+
+    return [
+        {
+            "id": str(u.id),
+            "name": u.name,
+            "short_name": u.short_name,
+            "city": u.city,
+            "state": u.state,
+            "type": u.type,
+            "student_count": u.student_count,
+            "logo_url": u.logo_url or "https://images.unsplash.com/photo-1541339907198-e08756dedf3f?auto=format&fit=crop&w=200&q=80",
+            "lat": u.lat,
+            "lng": u.lng,
+            "campuses": u.campuses_json or []
+        }
+        for u in db_unis
+    ]
+
+
+@router.post("/universities", status_code=status.HTTP_201_CREATED)
+def create_university(
+    payload: Dict[str, Any],
+    db: Session = Depends(get_db),
+    admin: models.User = Depends(auth.require_admin)
+):
+    """Admin endpoint to register a new campus ecosystem."""
+    short_name = (payload.get("short_name") or "").strip().upper()
+    name = (payload.get("name") or "").strip()
+    if not short_name or not name:
+        raise HTTPException(status_code=400, detail="University name and short_name are required.")
+
+    existing = db.query(models.University).filter(models.University.short_name == short_name).first()
+    if existing:
+        raise HTTPException(status_code=400, detail=f"University with code '{short_name}' already exists.")
+
+    campuses = payload.get("campuses") or [
+        {"name": f"{name} Main Campus", "campus_type": "Main Campus", "city": payload.get("city", "Campus"), "state": payload.get("state", "State")}
+    ]
+
+    new_uni = models.University(
+        id=uuid.uuid4(),
+        name=name,
+        short_name=short_name,
+        city=payload.get("city", "Campus City"),
+        state=payload.get("state", "State"),
+        type=payload.get("type", "Federal"),
+        student_count=int(payload.get("student_count", 20000)),
+        logo_url=payload.get("logo_url") or "https://images.unsplash.com/photo-1541339907198-e08756dedf3f?auto=format&fit=crop&w=200&q=80",
+        lat=float(payload.get("lat", 9.0)),
+        lng=float(payload.get("lng", 7.0)),
+        campuses_json=campuses,
+        is_active=True
+    )
+    db.add(new_uni)
+    db.commit()
+    db.refresh(new_uni)
+
+    # Also automatically create an official community for this university!
+    official_slug = f"{short_name.lower()}-general-hub"
+    existing_comm = db.query(models.Community).filter(models.Community.slug == official_slug).first()
+    if not existing_comm:
+        comm = models.Community(
+            id=uuid.uuid4(),
+            name=f"{short_name} Official Student Hub",
+            slug=official_slug,
+            description=f"Verified campus marketplace and student discussions for {name}.",
+            category="campus_life",
+            university=short_name,
+            icon="🎓",
+            banner_color="from-amber-600 to-orange-600",
+            is_official=True,
+            created_by=admin.id
+        )
+        db.add(comm)
+        db.commit()
+
+    return {
+        "success": True,
+        "university": {
+            "id": str(new_uni.id),
+            "name": new_uni.name,
+            "short_name": new_uni.short_name,
+            "city": new_uni.city,
+            "state": new_uni.state,
+            "type": new_uni.type,
+            "campuses": new_uni.campuses_json
+        }
+    }
+
+
+@router.delete("/universities/{uni_id}")
+def delete_university(
+    uni_id: UUID,
+    db: Session = Depends(get_db),
+    admin: models.User = Depends(auth.require_admin)
+):
+    target = db.query(models.University).filter(models.University.id == uni_id).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="University not found.")
+    db.delete(target)
+    db.commit()
+    return {"success": True}
 
 
 @router.get("/campus-locations")

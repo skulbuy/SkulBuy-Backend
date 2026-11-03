@@ -78,6 +78,8 @@ def run_safe_migrations():
         "ALTER TABLE products ADD COLUMN IF NOT EXISTS is_rental BOOLEAN DEFAULT FALSE",
         "ALTER TABLE products ADD COLUMN IF NOT EXISTS rental_period VARCHAR(50)",
         "ALTER TABLE products ADD COLUMN IF NOT EXISTS views INTEGER DEFAULT 0",
+        # Universities table check
+        "CREATE TABLE IF NOT EXISTS universities (id UUID PRIMARY KEY, name VARCHAR(200) NOT NULL, short_name VARCHAR(50) UNIQUE NOT NULL, city VARCHAR(100), state VARCHAR(100), type VARCHAR(50), student_count INT, logo_url VARCHAR(500), lat FLOAT, lng FLOAT, campuses_json JSON, is_active BOOLEAN DEFAULT TRUE, created_at TIMESTAMPTZ DEFAULT NOW())",
     ]
     for stmt in enum_statements:
         try:
