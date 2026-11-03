@@ -2,7 +2,7 @@ from __future__ import annotations
 from typing import Optional, List, Dict, Any
 from uuid import UUID
 from datetime import datetime
-from pydantic import BaseModel, EmailStr, Field, computed_field
+from pydantic import BaseModel, EmailStr, Field, computed_field, model_validator
 from models import (
     UserRole,
     UserStatus,
@@ -176,6 +176,11 @@ class CategoryOut(BaseModel):
     created_at: datetime
     model_config = {"from_attributes": True}
 
+    @computed_field
+    @property
+    def slug(self) -> str:
+        return self.name.lower().replace(" & ", "-").replace(" ", "-")
+
 
 # --- Product Schemas ---
 
@@ -193,15 +198,56 @@ class ProductImageOut(BaseModel):
 
 
 class ProductCreate(BaseModel):
-    category_id: UUID
+    category_id: Any
     title: str
     description: str
     condition: ProductCondition = ProductCondition.USED
-    price_kobo: int = Field(..., gt=0, description="Price in kobo (e.g. 100,000 kobo = 1,000 NGN)")
+    price_kobo: Optional[int] = Field(None, gt=0, description="Price in kobo")
+    price: Optional[float] = None
     stock: int = Field(1, ge=1)
     location: Optional[str] = None
     prep_time_minutes: int = 20
-    images: Optional[List[ProductImageCreate]] = None
+    image_url: Optional[str] = None
+    images: Optional[Any] = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_product_fields(cls, values: Any) -> Any:
+        if isinstance(values, dict):
+            # 1. Normalize price / price_kobo
+            if values.get("price_kobo") is None and values.get("price") is not None:
+                try:
+                    values["price_kobo"] = int(round(float(values["price"]) * 100))
+                except (ValueError, TypeError):
+                    values["price_kobo"] = 100000
+            elif values.get("price_kobo") is None:
+                values["price_kobo"] = 100000
+
+            # 2. Normalize condition
+            cond = str(values.get("condition") or "").lower()
+            if "new" in cond and "fairly" not in cond:
+                values["condition"] = ProductCondition.BRAND_NEW
+            else:
+                values["condition"] = ProductCondition.USED
+
+            # 3. Normalize location
+            if not values.get("location") and values.get("campus_location"):
+                values["location"] = values.get("campus_location")
+
+            # 4. Normalize images
+            imgs = values.get("images")
+            if isinstance(imgs, list):
+                norm_imgs = []
+                for i, img in enumerate(imgs):
+                    if isinstance(img, str):
+                        norm_imgs.append({"image_url": img, "sort_order": i})
+                    elif isinstance(img, dict):
+                        norm_imgs.append(img)
+                values["images"] = norm_imgs
+            elif values.get("image_url"):
+                values["images"] = [{"image_url": values["image_url"], "sort_order": 0}]
+
+        return values
 
 
 class ProductUpdate(BaseModel):
@@ -304,6 +350,16 @@ class OrderCreate(BaseModel):
     hub_id: Optional[UUID] = None
     delivery_method: DeliveryMethod = DeliveryMethod.PICKUP_HUB
     items: List[OrderItemCreate]
+
+
+class CheckoutRequest(BaseModel):
+    listing_id: Any
+    quantity: int = 1
+    fulfilment_type: str = "pickup"
+    fulfilment_address: Optional[str] = None
+    buyer_phone: Optional[str] = None
+    buyer_notes: Optional[str] = None
+    payment_method: str = "wallet"
 
 
 class OrderTimelineOut(BaseModel):

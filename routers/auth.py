@@ -67,6 +67,11 @@ def register(user_in: schemas.UserRegister, db: Session = Depends(get_db)):
         user=user,
     )
 
+@router.get("/me", response_model=schemas.UserOut)
+def get_auth_me(current_user: models.User = Depends(auth.get_current_user)):
+    """Returns the authenticated student's profile."""
+    return current_user
+
 @router.post("/verify-matric", response_model=schemas.UserOut)
 def verify_matric(
     req: schemas.VerifyMatricRequest,

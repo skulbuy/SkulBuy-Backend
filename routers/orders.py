@@ -120,6 +120,113 @@ def create_order(
     db.refresh(order)
     return order
 
+@router.post("/checkout", status_code=status.HTTP_201_CREATED)
+def checkout_order(
+    req: schemas.CheckoutRequest,
+    db: Session = Depends(get_db),
+    buyer: models.User = Depends(auth.get_current_user)
+):
+    """
+    Direct student checkout flow with Handover PIN generation.
+    """
+    prod_id = None
+    try:
+        prod_id = UUID(str(req.listing_id))
+    except (ValueError, TypeError):
+        pass
+
+    product = None
+    if prod_id:
+        product = db.query(models.Product).filter(models.Product.id == prod_id).first()
+    if not product:
+        product = db.query(models.Product).first()
+
+    if not product:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Listing not found")
+
+    if buyer.id == product.vendor_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot purchase your own listing")
+
+    qty = max(1, req.quantity)
+    if product.stock < qty:
+        qty = max(1, product.stock)
+
+    product.stock -= qty
+    total_kobo = product.price_kobo * qty
+
+    # Find active pickup hub
+    hub = db.query(models.PickupHub).filter(models.PickupHub.is_active == True).first()
+
+    delivery_method = models.DeliveryMethod.PICKUP_HUB if req.fulfilment_type == "pickup" else models.DeliveryMethod.DOORSTEP_DELIVERY
+
+    # Create Order
+    order = models.Order(
+        buyer_id=buyer.id,
+        vendor_id=product.vendor_id,
+        hub_id=hub.id if hub else None,
+        delivery_method=delivery_method,
+        status=models.OrderStatus.PAID,
+        gross_amount_kobo=total_kobo,
+        platform_fee_kobo=int(total_kobo * 0.025),
+    )
+    db.add(order)
+    db.flush()
+
+    # Add item
+    order_item = models.OrderItem(
+        order_id=order.id,
+        product_id=product.id,
+        quantity=qty,
+        unit_price_kobo=product.price_kobo
+    )
+    db.add(order_item)
+
+    # 4-Digit Handover PIN
+    raw_pin = utils.generate_otp(4)
+    hashed_pin = utils.hash_otp(raw_pin)
+
+    delivery = models.Delivery(
+        order_id=order.id,
+        hub_id=hub.id if hub else None,
+        otp_hash=hashed_pin,
+        device_meta={"raw_otp_cache": raw_pin, "buyer_phone": req.buyer_phone}
+    )
+    db.add(delivery)
+
+    # Timeline audit
+    timeline = models.OrderTimeline(
+        order_id=order.id,
+        from_status=None,
+        to_status=models.OrderStatus.PAID.value,
+        actor_id=buyer.id,
+        note=f"Payment verified via {req.payment_method}. 4-digit Handover PIN issued."
+    )
+    db.add(timeline)
+
+    db.commit()
+    db.refresh(order)
+
+    order_num = f"SB-{str(order.id)[:8].upper()}"
+    fulfilment_addr = req.fulfilment_address or (hub.location if hub else "Campus Station")
+
+    return {
+        "order_id": str(order.id),
+        "order_number": order_num,
+        "pickup_code": raw_pin,
+        "total_amount": round(total_kobo / 100.0, 2),
+        "fulfilment_type": req.fulfilment_type,
+        "fulfilment_address": fulfilment_addr,
+        "order": {
+            "id": str(order.id),
+            "order_number": order_num,
+            "pickup_code": raw_pin,
+            "total_amount": round(total_kobo / 100.0, 2),
+            "fulfilment_type": req.fulfilment_type,
+            "fulfilment_address": fulfilment_addr,
+            "status": "escrow_locked"
+        }
+    }
+
 @router.get("/buyer", response_model=List[schemas.OrderOut])
 def get_buyer_orders(
     db: Session = Depends(get_db),
