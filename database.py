@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     PLATFORM_FEE_PERCENTAGE: float = 2.5
     CAMPUS_NAME: str = "FUT Minna"
     PROTECTION_WINDOW_HOURS: int = 24
+    CLOUDINARY_URL: str = ""
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

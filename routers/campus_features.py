@@ -202,35 +202,91 @@ def suggest_university_by_coords(
 
 
 # ==========================================================
-# 2. FILE / IMAGE UPLOAD
+# 2. FILE / IMAGE UPLOAD (CLOUDINARY CDN + LOCAL FALLBACK)
 # ==========================================================
+
+def _upload_to_cloudinary(file_or_data: Any, folder: str = "skulbuy") -> Optional[dict]:
+    """Uploads file or base64 data to Cloudinary CDN if CLOUDINARY_URL is configured."""
+    cloudinary_url = os.getenv("CLOUDINARY_URL") or getattr(settings, "CLOUDINARY_URL", "")
+    if not cloudinary_url:
+        return None
+
+    try:
+        import cloudinary
+        import cloudinary.uploader
+
+        # Explicitly configure from CLOUDINARY_URL if needed
+        cloudinary.config(cloudinary_url=cloudinary_url)
+
+        res = cloudinary.uploader.upload(
+            file_or_data,
+            folder=folder,
+            resource_type="auto",
+            transformation=[
+                {"quality": "auto", "fetch_format": "auto"}
+            ],
+            overwrite=True
+        )
+        secure_url = res.get("secure_url") or res.get("url")
+        public_id = res.get("public_id")
+        return {"url": secure_url, "filename": public_id}
+    except Exception as e:
+        print(f">> Notice: Cloudinary upload attempt failed, falling back to local/data storage: {e}")
+        return None
+
 
 @router.post("/upload")
 async def upload_file(request: Request):
     content_type_header = request.headers.get("content-type", "")
+    folder = "skulbuy/uploads"
+
+    # 1. Base64 JSON upload
     if "application/json" in content_type_header:
         body = await request.json()
         img_data = body.get("image") or body.get("file") or ""
-        if img_data.startswith("data:image/"):
-            return {"url": img_data, "filename": f"{uuid.uuid4().hex}.jpg"}
-        elif img_data.startswith("http"):
-            return {"url": img_data, "filename": "external.jpg"}
-        raise HTTPException(status_code=400, detail="Invalid base64 image data")
+        folder_req = body.get("folder") or body.get("type")
+        if folder_req:
+            folder = f"skulbuy/{folder_req}"
 
+        if img_data.startswith("http"):
+            return {"url": img_data, "filename": "external.jpg"}
+
+        if not img_data.startswith("data:image/"):
+            raise HTTPException(status_code=400, detail="Invalid base64 image data")
+
+        # Attempt Cloudinary CDN upload first
+        c_res = _upload_to_cloudinary(img_data, folder=folder)
+        if c_res and c_res.get("url"):
+            return c_res
+
+        # Fallback to direct data URI when Cloudinary is not configured
+        return {"url": img_data, "filename": f"{uuid.uuid4().hex}.jpg"}
+
+    # 2. Multipart form-data upload
     form = await request.form()
     file = form.get("file")
+    folder_req = form.get("folder") or form.get("type")
+    if folder_req:
+        folder = f"skulbuy/{folder_req}"
+
     if not file or not hasattr(file, "read"):
         raise HTTPException(status_code=400, detail="No file uploaded")
 
     content = await file.read()
-    if len(content) > 8 * 1024 * 1024:
-        raise HTTPException(status_code=400, detail="File exceeds 8MB limit")
+    if len(content) > 12 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="File exceeds 12MB limit")
 
     mime = getattr(file, "content_type", None) or "image/jpeg"
     ext = (getattr(file, "filename", None) or "image.jpg").split(".")[-1].lower()
     if ext not in ["jpg", "jpeg", "png", "webp", "gif"]:
         ext = "jpg"
 
+    # Attempt Cloudinary CDN upload
+    c_res = _upload_to_cloudinary(content, folder=folder)
+    if c_res and c_res.get("url"):
+        return c_res
+
+    # Local storage fallback
     filename = f"{uuid.uuid4().hex}.{ext}"
     filepath = os.path.join(UPLOAD_DIR, filename)
     with open(filepath, "wb") as f:
