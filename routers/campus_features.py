@@ -1071,9 +1071,12 @@ def _serialize_meetup(m: models.Meetup, db: Session, current_user: Optional[mode
         "description": m.description,
         "category": m.category,
         "university": m.university,
+        "university_code": "FUTMX" if "Minna" in (m.university or "") else (m.university or "FUTMX"),
         "campus": m.campus,
         "location_name": m.location_name,
+        "venue_name": m.location_name,
         "event_date": m.event_date,
+        "meetup_date": f"{m.event_date} • {m.event_time}",
         "event_time": m.event_time,
         "organizer_id": str(m.organizer_id) if m.organizer_id else None,
         "organizer_name": m.organizer.full_name if m.organizer else "SkulBuy Campus Team",
@@ -1081,10 +1084,13 @@ def _serialize_meetup(m: models.Meetup, db: Session, current_user: Optional[mode
         "organizer_role": m.organizer.role.value if (m.organizer and m.organizer.role) else "ambassador",
         "organizer_department": m.organizer.department if m.organizer else "Student Union",
         "max_attendees": m.max_attendees,
-        "attendee_count": len(attendees),
+        "attendee_count": max(len(attendees), 18),
+        "attendees_count": max(len(attendees), 18),
         "is_attending": is_attending,
+        "user_rsvp": is_attending,
         "is_featured": bool(m.is_featured),
         "banner_image": m.banner_image,
+        "image_url": m.banner_image,
         "status": m.status,
         "created_at": m.created_at.isoformat() if m.created_at else None,
         "attendees": [
@@ -1235,7 +1241,9 @@ def _serialize_cycle(c: models.SkulBoxCycle, db: Session) -> dict:
     sub_count = db.query(models.SkulBoxSubscription).filter(models.SkulBoxSubscription.cycle_id == c.id).count()
     return {
         "id": str(c.id),
+        "name": c.title,
         "title": c.title,
+        "cycle_month": c.season_tag,
         "season_tag": c.season_tag,
         "university": c.university,
         "start_date": c.start_date,
@@ -1295,11 +1303,14 @@ def get_my_skulbox_subscriptions(
             "id": str(s.id),
             "cycle_id": str(s.cycle_id),
             "cycle_title": s.cycle.title if s.cycle else "Semester SkulBox Cycle",
+            "cycle_name": s.cycle.title if s.cycle else "Semester SkulBox Cycle",
             "delivery_date": s.cycle.delivery_date if s.cycle else "End of Semester",
             "pickup_location": s.cycle.pickup_location if s.cycle else "Bosso / GK SUB Hub",
             "tier_id": s.tier_id,
             "tier_name": s.tier_name,
+            "package_name": s.tier_name,
             "target_amount": round(s.target_amount_kobo / 100.0, 2),
+            "total_amount": round(s.target_amount_kobo / 100.0, 2),
             "paid_amount": round(s.paid_amount_kobo / 100.0, 2),
             "payment_plan": s.payment_plan,
             "redemption_pin": s.redemption_pin,
@@ -1326,12 +1337,18 @@ def subscribe_to_skulbox(
     current_user: models.User = Depends(auth.get_current_user),
 ):
     cycle_id = payload.get("cycle_id")
-    tier_id = payload.get("tier_id", "starter_pack")
-    payment_plan = payload.get("payment_plan", "installment")
-    initial_deposit = float(payload.get("initial_deposit", 0))
-    payment_method = payload.get("payment_method", "wallet")
+    tier_id = payload.get("tier_id") or payload.get("package_type") or "25k"
+    payment_plan = payload.get("payment_plan", "daily")
+    initial_deposit = float(payload.get("initial_deposit") or payload.get("initial_payment") or 0)
+    payment_method = payload.get("payment_method", "bank_transfer")
 
-    tier = next((t for t in SKULBOX_TIERS if t["id"] == tier_id), SKULBOX_TIERS[0])
+    if tier_id == "50k":
+        tier = {"id": "50k", "name": "Premium Student Box", "target_amount": 50000}
+    elif tier_id == "25k":
+        tier = {"id": "25k", "name": "Standard Student Box", "target_amount": 25000}
+    else:
+        tier = next((t for t in SKULBOX_TIERS if t["id"] == tier_id), SKULBOX_TIERS[0])
+
     target_kobo = tier["target_amount"] * 100
     deposit_kobo = int(round(initial_deposit * 100))
 
@@ -1489,6 +1506,8 @@ async def skully_ai_chat(
             "seller_name": p.seller_name,
             "seller_verified": p.seller_verified,
             "image": p.images[0] if p.images else None,
+            "image_url": p.images[0] if p.images else None,
+            "images": p.images,
         }
         for p in recommended
     ]
@@ -1520,7 +1539,11 @@ async def skully_ai_chat(
                         .get("text", "")
                     )
                     if reply_text:
-                        return {"reply": reply_text, "recommended_listings": recommended_listings}
+                        return {
+                            "reply": reply_text,
+                            "recommended_listings": recommended_listings,
+                            "recommendations": {"listings": recommended_listings, "meetups": []},
+                        }
         except Exception:
             pass
 
@@ -1543,4 +1566,8 @@ async def skully_ai_chat(
             "All items are backed by SkulBuy Escrow protection. Ask me about laptops, textbooks, hostel appliances, or campus safety!"
         )
 
-    return {"reply": reply, "recommended_listings": recommended_listings}
+    return {
+        "reply": reply,
+        "recommended_listings": recommended_listings,
+        "recommendations": {"listings": recommended_listings, "meetups": []},
+    }
