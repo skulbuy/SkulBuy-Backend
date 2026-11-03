@@ -27,17 +27,32 @@ db_url = settings.DB_URL.strip()
 if db_url.startswith("postgres://"):
     db_url = db_url.replace("postgres://", "postgresql://", 1)
 
-# Ensure proper PostgreSQL driver selection (fallback gracefully if only psycopg2 is installed)
-if db_url.startswith("postgresql://"):
+# Ensure proper PostgreSQL driver selection (handles psycopg v3, psycopg2, and URL overrides gracefully)
+if "postgresql" in db_url:
+    has_psycopg3 = False
     try:
         import psycopg  # noqa: F401
-        db_url = db_url.replace("postgresql://", "postgresql+psycopg://", 1)
+        has_psycopg3 = True
     except (ImportError, ModuleNotFoundError):
-        try:
-            import psycopg2  # noqa: F401
+        pass
+
+    has_psycopg2 = False
+    try:
+        import psycopg2  # noqa: F401
+        has_psycopg2 = True
+    except (ImportError, ModuleNotFoundError):
+        pass
+
+    if has_psycopg3:
+        if db_url.startswith("postgresql://"):
+            db_url = db_url.replace("postgresql://", "postgresql+psycopg://", 1)
+        elif db_url.startswith("postgresql+psycopg2://") and not has_psycopg2:
+            db_url = db_url.replace("postgresql+psycopg2://", "postgresql+psycopg://", 1)
+    elif has_psycopg2:
+        if db_url.startswith("postgresql://"):
             db_url = db_url.replace("postgresql://", "postgresql+psycopg2://", 1)
-        except (ImportError, ModuleNotFoundError):
-            pass
+        elif db_url.startswith("postgresql+psycopg://"):
+            db_url = db_url.replace("postgresql+psycopg://", "postgresql+psycopg2://", 1)
 
 is_sqlite = db_url.startswith("sqlite")
 connect_args = {"check_same_thread": False} if is_sqlite else {}
