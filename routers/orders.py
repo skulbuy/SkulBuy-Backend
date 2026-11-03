@@ -151,8 +151,32 @@ def checkout_order(
     if product.stock < qty:
         qty = max(1, product.stock)
 
-    product.stock -= qty
     total_kobo = product.price_kobo * qty
+
+    if req.payment_method == "wallet":
+        if (buyer.wallet_balance_kobo or 0) < total_kobo:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Insufficient SkulBuy Wallet balance for this order"
+            )
+        buyer.wallet_balance_kobo -= total_kobo
+        db.add(models.WalletTransaction(
+            user_id=buyer.id,
+            type="debit",
+            amount_kobo=total_kobo,
+            description=f"Escrow Checkout: {product.title}",
+            reference=f"CHK-{utils.generate_otp(8)}",
+            status="completed"
+        ))
+
+    product.stock -= qty
+    buyer.points = (buyer.points or 0) + 50
+    db.add(models.PointsLedger(
+        user_id=buyer.id,
+        action="escrow_purchase",
+        points=50,
+        description=f"Escrow Purchase Reward: {product.title}"
+    ))
 
     # Find active pickup hub
     hub = db.query(models.PickupHub).filter(models.PickupHub.is_active == True).first()

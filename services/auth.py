@@ -12,6 +12,7 @@ from database import get_db, settings
 import models
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
+oauth2_scheme_optional = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login", auto_error=False)
 
 ALGORITHM = settings.ALGORITHM
 KEY = settings.KEY
@@ -133,6 +134,18 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
         )
 
     return user
+
+def get_optional_user(token: Optional[str] = Depends(oauth2_scheme_optional), db: Session = Depends(get_db)) -> Optional[models.User]:
+    if not token:
+        return None
+    try:
+        payload = jwt.decode(token, key=KEY, algorithms=[ALGORITHM])
+        user_id = payload.get("sub")
+        if not user_id:
+            return None
+        return db.query(models.User).filter(models.User.id == user_id).first()
+    except Exception:
+        return None
 
 def require_admin(user: models.User = Depends(get_current_user)) -> models.User:
     if user.role != models.UserRole.ADMIN:

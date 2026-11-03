@@ -1,8 +1,9 @@
 from datetime import datetime, timezone
 from uuid import UUID
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 
 from database import get_db
 import models
@@ -10,6 +11,122 @@ import schemas
 from services import auth, state_machine, ledger
 
 router = APIRouter(prefix="/admin", tags=["Admin & Ops Queue"])
+
+
+@router.get("/metrics")
+def get_admin_metrics(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(auth.get_current_user)
+):
+    """Returns real-time platform KPI metrics for the Admin Dashboard."""
+    total_users = db.query(models.User).count()
+    verified_users = db.query(models.User).filter(models.User.is_verified == True).count()
+    total_listings = db.query(models.Product).filter(models.Product.status == models.ProductStatus.ACTIVE).count()
+    pending_reports = db.query(models.Report).filter(models.Report.status == "pending").count()
+    pending_verifications = db.query(models.User).filter(
+        models.User.id_card_image.isnot(None),
+        models.User.is_verified == False
+    ).count()
+    gmv_kobo = db.query(func.coalesce(func.sum(models.Order.gross_amount_kobo), 0)).scalar() or 0
+
+    return {
+        "total_users": total_users,
+        "verified_users": verified_users,
+        "total_listings": total_listings,
+        "pending_reports": pending_reports,
+        "pending_verifications": pending_verifications,
+        "total_gmv": round(gmv_kobo / 100.0, 2),
+    }
+
+
+@router.get("/verifications")
+def list_student_verifications(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(auth.get_current_user)
+):
+    users = db.query(models.User).filter(models.User.id_card_image.isnot(None)).order_by(models.User.created_at.desc()).all()
+    return [
+        {
+            "id": str(u.id),
+            "name": u.full_name,
+            "email": u.email,
+            "university": u.school_name,
+            "matric_number": u.matric_no,
+            "department": u.department,
+            "id_card_image": u.id_card_image,
+            "student_id_verified": 1 if u.is_verified else 0,
+            "created_at": u.created_at.isoformat() if u.created_at else None,
+        }
+        for u in users
+    ]
+
+
+@router.post("/verifications/{user_id}")
+def review_student_verification(
+    user_id: UUID,
+    payload: Dict[str, Any],
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(auth.get_current_user)
+):
+    action = payload.get("action", "approve")
+    target_user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not target_user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    if action == "approve":
+        target_user.is_verified = True
+        target_user.student_id_verified = 1
+    else:
+        target_user.is_verified = False
+        target_user.student_id_verified = 0
+
+    db.commit()
+    return {"success": True, "status": "approved" if target_user.is_verified else "rejected"}
+
+
+@router.get("/reports")
+def list_moderation_reports(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(auth.get_current_user)
+):
+    reports = db.query(models.Report).order_by(models.Report.created_at.desc()).all()
+    return [
+        {
+            "id": str(r.id),
+            "listing_id": str(r.product_id) if r.product_id else None,
+            "listing_title": r.product.title if r.product else "General Report",
+            "reporter_name": r.reporter.full_name if r.reporter else "Student",
+            "reason": r.reason,
+            "details": r.details,
+            "status": r.status,
+            "created_at": r.created_at.isoformat() if r.created_at else None,
+        }
+        for r in reports
+    ]
+
+
+@router.post("/reports/{report_id}/action")
+def resolve_moderation_report(
+    report_id: UUID,
+    payload: Dict[str, Any],
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(auth.get_current_user)
+):
+    rep = db.query(models.Report).filter(models.Report.id == report_id).first()
+    if not rep:
+        raise HTTPException(status_code=404, detail="Report not found")
+
+    action = payload.get("action", "dismiss")
+    if action == "remove_listing" and rep.product_id:
+        prod = db.query(models.Product).filter(models.Product.id == rep.product_id).first()
+        if prod:
+            prod.status = models.ProductStatus.SUSPENDED
+        rep.status = "resolved_removed"
+    else:
+        rep.status = "dismissed"
+
+    db.commit()
+    return {"success": True, "status": rep.status}
 
 @router.get("/orders", response_model=List[schemas.OrderOut])
 def list_admin_orders(

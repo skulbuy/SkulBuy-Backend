@@ -190,8 +190,152 @@ def run_seed(db: Session = None):
                 db.commit()
                 print(f"   + Created Product: {prod.title} (₦{pdata['price_kobo'] / 100:,.2f})")
 
+        print(">> Seeding Campus Communities...")
+        communities_data = [
+            {
+                "name": "FUT Minna General Marketplace Hub",
+                "slug": "futminna-general-hub",
+                "description": "Official campus community for verified FUT Minna students across Bosso and Gidan Kwano.",
+                "category": "campus_life",
+                "university": "FUT Minna",
+                "icon": "🎓",
+                "banner_color": "from-amber-600 to-orange-600",
+                "is_official": True,
+            },
+            {
+                "name": "SEET & SICT Tech & Gadgets Exchange",
+                "slug": "futminna-tech-exchange",
+                "description": "Buy, sell, and swap laptops, Arduino kits, calculators, and programming gear.",
+                "category": "tech",
+                "university": "FUT Minna",
+                "icon": "💻",
+                "banner_color": "from-blue-600 to-indigo-700",
+                "is_official": True,
+            },
+            {
+                "name": "Gidan Kwano & Bosso Hostel Deals",
+                "slug": "futminna-hostel-deals",
+                "description": "Roommate finder, mattresses, rechargeable fans, gas cylinders, and lodge clearances.",
+                "category": "housing",
+                "university": "FUT Minna",
+                "icon": "🏠",
+                "banner_color": "from-emerald-600 to-teal-700",
+                "is_official": False,
+            },
+            {
+                "name": "100L - 500L Textbooks & Past Questions",
+                "slug": "futminna-academics",
+                "description": "MTH, PHY, CHM, GST textbooks, lab coats, drawing boards, and exam study groups.",
+                "category": "academics",
+                "university": "FUT Minna",
+                "icon": "📚",
+                "banner_color": "from-purple-600 to-violet-700",
+                "is_official": False,
+            },
+        ]
+
+        for cdata in communities_data:
+            existing_comm = db.query(models.Community).filter(models.Community.slug == cdata["slug"]).first()
+            if not existing_comm:
+                comm = models.Community(
+                    id=uuid.uuid4(),
+                    name=cdata["name"],
+                    slug=cdata["slug"],
+                    description=cdata["description"],
+                    category=cdata["category"],
+                    university=cdata["university"],
+                    icon=cdata["icon"],
+                    banner_color=cdata["banner_color"],
+                    is_official=cdata["is_official"],
+                    created_by=seller.id,
+                )
+                db.add(comm)
+                db.flush()
+                db.add(models.CommunityMember(community_id=comm.id, user_id=seller.id, role="admin"))
+                welcome_msg = models.CommunityMessage(
+                    community_id=comm.id,
+                    user_id=seller.id,
+                    content=f"Welcome to {comm.name}! Remember to always use SkulBuy Escrow & your 4-Digit Handover PIN when trading on campus.",
+                    message_type="announcement",
+                    is_pinned=True,
+                )
+                db.add(welcome_msg)
+                db.commit()
+
+        print(">> Seeding Campus Meetups...")
+        meetups_data = [
+            {
+                "title": "FUT Minna Campus Tech & Creators Swap Meet",
+                "description": "Bring your laptops, gadgets, and accessories for live inspection, diagnostics, and instant Escrow trades at Gidan Kwano.",
+                "category": "tech",
+                "university": "FUT Minna",
+                "campus": "Gidan Kwano Campus",
+                "location_name": "SICT Lecture Theatre Foyer, Gidan Kwano",
+                "event_date": "2026-11-21",
+                "event_time": "14:00",
+                "max_attendees": 120,
+                "is_featured": True,
+                "banner_image": "https://images.unsplash.com/photo-1540575467063-178a50c2df87?w=800&auto=format&fit=crop&q=80",
+            },
+            {
+                "title": "Final Year Clearance & Hostel Yard Sale",
+                "description": "Graduating 500L students clearing out standing fans, mattresses, gas cylinders, and textbooks at student-friendly prices.",
+                "category": "trade_fair",
+                "university": "FUT Minna",
+                "campus": "Bosso Campus",
+                "location_name": "Bosso Campus SUB Car Park",
+                "event_date": "2026-11-28",
+                "event_time": "11:00",
+                "max_attendees": 200,
+                "is_featured": True,
+                "banner_image": "https://images.unsplash.com/photo-1523580494863-6f3031224c94?w=800&auto=format&fit=crop&q=80",
+            },
+        ]
+
+        for mdata in meetups_data:
+            existing_meetup = db.query(models.Meetup).filter(models.Meetup.title == mdata["title"]).first()
+            if not existing_meetup:
+                m = models.Meetup(
+                    id=uuid.uuid4(),
+                    title=mdata["title"],
+                    description=mdata["description"],
+                    category=mdata["category"],
+                    university=mdata["university"],
+                    campus=mdata["campus"],
+                    location_name=mdata["location_name"],
+                    event_date=mdata["event_date"],
+                    event_time=mdata["event_time"],
+                    organizer_id=seller.id,
+                    max_attendees=mdata["max_attendees"],
+                    is_featured=mdata["is_featured"],
+                    banner_image=mdata["banner_image"],
+                )
+                db.add(m)
+                db.flush()
+                db.add(models.MeetupAttendee(meetup_id=m.id, user_id=seller.id, status="going"))
+                db.commit()
+
+        print(">> Seeding SkulBox Cycle...")
+        existing_cycle = db.query(models.SkulBoxCycle).first()
+        if not existing_cycle:
+            cycle = models.SkulBoxCycle(
+                id=uuid.uuid4(),
+                title="Harmattan Semester Food & Provisions Bulk Cycle",
+                season_tag="Harmattan 2026 Batch",
+                university="FUT Minna",
+                start_date="2026-11-01",
+                lock_date="2026-11-30",
+                delivery_date="2026-12-05",
+                pickup_location="Gidan Kwano SUB & Bosso Central Hub",
+                status="open",
+                discount_pct=25,
+                max_slots=250,
+            )
+            db.add(cycle)
+            db.commit()
+
         print(">> Database Seeding Complete!")
-        return {"status": "success", "message": "Categories, hubs, and sample products seeded successfully."}
+        return {"status": "success", "message": "Categories, hubs, sample products, communities, meetups, and SkulBox cycles seeded successfully."}
 
     except Exception as e:
         db.rollback()
@@ -203,3 +347,4 @@ def run_seed(db: Session = None):
 
 if __name__ == "__main__":
     run_seed()
+

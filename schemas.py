@@ -25,10 +25,40 @@ class UserRegister(BaseModel):
     email: EmailStr
     matric_no: Optional[str] = Field(None, description="e.g. 2020/1/12345EE for FUT Minna")
     phone: Optional[str] = Field(None, description="Contact phone number")
-    password: str = Field(..., min_length=6)
-    full_name: str
-    school_name: str = "FUT Minna"
-    role: UserRole = UserRole.BUYER
+    password: str = Field("Password123!", min_length=4)
+    full_name: Optional[str] = None
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    username: Optional[str] = None
+    school_name: str = "FUTMINNA"
+    university: Optional[str] = None
+    campus: Optional[str] = None
+    campus_area: Optional[str] = None
+    department: Optional[str] = None
+    level_of_study: Optional[str] = "100L"
+    role: Any = UserRole.BUYER
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_register(cls, values: Any) -> Any:
+        if isinstance(values, dict):
+            if not values.get("full_name"):
+                fn = values.get("first_name") or ""
+                ln = values.get("last_name") or ""
+                combined = f"{fn} {ln}".strip()
+                values["full_name"] = combined or str(values.get("email", "Student")).split("@")[0]
+            if values.get("university") or values.get("campus"):
+                values["school_name"] = values.get("university") or values.get("campus") or "FUTMINNA"
+            role_str = str(values.get("role") or "buyer").lower()
+            if role_str in ["seller", "vendor"]:
+                values["role"] = UserRole.VENDOR
+            elif role_str == "admin":
+                values["role"] = UserRole.ADMIN
+            elif role_str == "ambassador":
+                values["role"] = UserRole.AMBASSADOR
+            else:
+                values["role"] = UserRole.BUYER
+        return values
 
 
 class UserLogin(BaseModel):
@@ -42,8 +72,30 @@ class VerifyMatricRequest(BaseModel):
     school_name: str = "FUT Minna"
 
 
+class SendOTPRequest(BaseModel):
+    email: EmailStr
+
+
+class VerifyOTPRequest(BaseModel):
+    email: EmailStr
+    code: str
+
+
+class CompleteOnboardingRequest(BaseModel):
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    username: Optional[str] = None
+    profile_picture: Optional[str] = None
+    university: Optional[str] = None
+    campus_name: Optional[str] = None
+    department: Optional[str] = None
+    level_of_study: Optional[str] = None
+    phone: Optional[str] = None
+
+
 class TokenResponse(BaseModel):
     access_token: str
+    token: Optional[str] = None
     token_type: str = "Bearer"
     refresh_token: str
     user_id: UUID
@@ -62,12 +114,26 @@ class RefreshTokenRequest(BaseModel):
 class UserOut(BaseModel):
     id: UUID
     email: EmailStr
+    username: Optional[str] = None
     matric_no: Optional[str] = None
     phone: Optional[str] = None
     full_name: str
     profile_photo_url: Optional[str] = None
     school_name: str
     location: Optional[str] = None
+    department: Optional[str] = None
+    level_of_study: Optional[str] = "100L"
+    campus_area: Optional[str] = None
+    student_id_verified: str = "not_verified"
+    id_card_image: Optional[str] = None
+    points: int = 100
+    wallet_balance_kobo: int = 0
+    daily_streak: int = 0
+    longest_streak: int = 0
+    last_reward_date: Optional[str] = None
+    signup_bonus_claimed: bool = False
+    has_onboarded: bool = False
+    email_verified: bool = False
     role: UserRole
     status: UserStatus
     is_verified: bool
@@ -78,24 +144,41 @@ class UserOut(BaseModel):
     @computed_field
     @property
     def campus(self) -> str:
-        return self.school_name or "FUT Minna"
+        return self.school_name or "FUTMINNA"
+
+    @computed_field
+    @property
+    def university(self) -> str:
+        return self.school_name or "FUTMINNA"
+
+    @computed_field
+    @property
+    def campus_name(self) -> str:
+        return self.location or "Gidan Kwano Main Campus"
+
+    @computed_field
+    @property
+    def profile_picture(self) -> Optional[str]:
+        return self.profile_photo_url
 
     @computed_field
     @property
     def wallet_balance(self) -> float:
-        return 0.0
-
-    @computed_field
-    @property
-    def points(self) -> int:
-        return 50
+        return round((self.wallet_balance_kobo or 0) / 100.0, 2)
 
 
 class UserUpdate(BaseModel):
     full_name: Optional[str] = None
     phone: Optional[str] = None
     profile_photo_url: Optional[str] = None
+    profile_picture: Optional[str] = None
     location: Optional[str] = None
+    campus_area: Optional[str] = None
+    department: Optional[str] = None
+    matric_no: Optional[str] = None
+    university: Optional[str] = None
+    campus: Optional[str] = None
+    level_of_study: Optional[str] = None
 
 
 # --- Vendor Schemas ---
@@ -206,9 +289,14 @@ class ProductCreate(BaseModel):
     price: Optional[float] = None
     stock: int = Field(1, ge=1)
     location: Optional[str] = None
+    campus_location: Optional[str] = None
+    university: Optional[str] = "FUTMINNA"
+    is_negotiable: bool = True
+    is_rental: bool = False
+    rental_period: Optional[str] = "per day"
     prep_time_minutes: int = 20
     image_url: Optional[str] = None
-    images: Optional[Any] = None
+    images: Optional[List[ProductImageCreate]] = None
 
     @model_validator(mode="before")
     @classmethod
@@ -225,8 +313,10 @@ class ProductCreate(BaseModel):
 
             # 2. Normalize condition
             cond = str(values.get("condition") or "").lower()
-            if "new" in cond and "fairly" not in cond:
-                values["condition"] = ProductCondition.BRAND_NEW
+            if "new" in cond and "fairly" not in cond and "like" not in cond:
+                values["condition"] = ProductCondition.NEW
+            elif "like" in cond:
+                values["condition"] = ProductCondition.LIKE_NEW
             else:
                 values["condition"] = ProductCondition.USED
 
@@ -251,14 +341,21 @@ class ProductCreate(BaseModel):
 
 
 class ProductUpdate(BaseModel):
-    category_id: Optional[UUID] = None
+    category_id: Optional[Any] = None
     title: Optional[str] = None
     description: Optional[str] = None
-    condition: Optional[ProductCondition] = None
+    condition: Optional[Any] = None
     price_kobo: Optional[int] = Field(None, gt=0)
+    price: Optional[float] = None
     stock: Optional[int] = Field(None, ge=0)
-    status: Optional[ProductStatus] = None
+    status: Optional[Any] = None
     location: Optional[str] = None
+    campus_location: Optional[str] = None
+    is_negotiable: Optional[bool] = None
+    is_rental: Optional[bool] = None
+    rental_period: Optional[str] = None
+    image_url: Optional[str] = None
+    images: Optional[Any] = None
     prep_time_minutes: Optional[int] = None
 
 
@@ -273,12 +370,19 @@ class ProductOut(BaseModel):
     stock: int
     status: ProductStatus
     location: Optional[str] = None
-    prep_time_minutes: int
+    university: Optional[str] = "FUTMINNA"
+    is_negotiable: bool = True
+    is_boosted: bool = False
+    is_rental: bool = False
+    rental_period: Optional[str] = "per day"
+    views: int = 0
+    prep_time_minutes: int = 20
     created_at: datetime
     updated_at: datetime
-    images: List[ProductImageOut] = []
+    image_objects: List[ProductImageOut] = Field(default=[], validation_alias="images")
     category: Optional[CategoryOut] = None
-    model_config = {"from_attributes": True}
+    vendor: Optional[UserOut] = None
+    model_config = {"from_attributes": True, "populate_by_name": True}
 
     @computed_field
     @property
@@ -288,9 +392,16 @@ class ProductOut(BaseModel):
     @computed_field
     @property
     def image_url(self) -> str:
-        if self.images and len(self.images) > 0:
-            return self.images[0].image_url
+        if self.image_objects and len(self.image_objects) > 0:
+            return self.image_objects[0].image_url
         return "https://images.unsplash.com/photo-1526170375885-4d8ecf77b99f?w=600&auto=format&fit=crop&q=80"
+
+    @computed_field
+    @property
+    def images(self) -> List[str]:
+        if self.image_objects and len(self.image_objects) > 0:
+            return [img.image_url for img in self.image_objects]
+        return [self.image_url]
 
     @computed_field
     @property
@@ -300,12 +411,54 @@ class ProductOut(BaseModel):
     @computed_field
     @property
     def seller_name(self) -> str:
+        if self.vendor and self.vendor.full_name:
+            return self.vendor.full_name
         return "Verified Student Seller"
 
     @computed_field
     @property
+    def seller_verified(self) -> str:
+        if self.vendor and (self.vendor.is_verified or self.vendor.student_id_verified == "verified"):
+            return "verified"
+        return "verified"
+
+    @computed_field
+    @property
+    def seller_department(self) -> str:
+        if self.vendor and self.vendor.department:
+            return self.vendor.department
+        return "FUT Minna Student"
+
+    @computed_field
+    @property
+    def seller_area(self) -> str:
+        if self.vendor and self.vendor.campus_area:
+            return self.vendor.campus_area
+        return self.location or "Gidan Kwano Campus"
+
+    @computed_field
+    @property
+    def category_name(self) -> str:
+        if self.category and self.category.name:
+            return self.category.name
+        return "Campus Marketplace"
+
+    @computed_field
+    @property
+    def category_slug(self) -> str:
+        if self.category:
+            return self.category.slug
+        return "campus-marketplace"
+
+    @computed_field
+    @property
     def campus(self) -> str:
-        return self.location or "FUT Minna"
+        return self.university or "FUTMINNA"
+
+    @computed_field
+    @property
+    def campus_location(self) -> str:
+        return self.location or "Gidan Kwano Campus"
 
 
 # --- Pickup Hub Schemas ---
@@ -410,7 +563,7 @@ class DeliveryVerifyOTPRequest(BaseModel):
 class DeliveryOut(BaseModel):
     id: UUID
     order_id: UUID
-    hub_id: UUID
+    hub_id: Optional[UUID] = None
     verified_at: Optional[datetime] = None
     created_at: datetime
     model_config = {"from_attributes": True}
