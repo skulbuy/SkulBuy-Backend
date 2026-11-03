@@ -217,7 +217,7 @@ def run_seed(db: Session = None):
                 )
                 db.add(img)
                 db.commit()
-                print(f"   + Created Product: {prod.title} (₦{pdata['price_kobo'] / 100:,.2f})")
+                print(f"   + Created Product: {prod.title} (NGN {pdata['price_kobo'] / 100:,.2f})")
 
         print(">> Seeding Campus Communities...")
         communities_data = [
