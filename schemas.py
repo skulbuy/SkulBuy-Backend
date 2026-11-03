@@ -2,7 +2,7 @@ from __future__ import annotations
 from typing import Optional, List, Dict, Any
 from uuid import UUID
 from datetime import datetime
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, computed_field
 from models import (
     UserRole,
     UserStatus,
@@ -32,7 +32,8 @@ class UserRegister(BaseModel):
 
 
 class UserLogin(BaseModel):
-    username: str = Field(..., description="Email or Matric Number")
+    username: Optional[str] = Field(None, description="Email or Matric Number")
+    email: Optional[str] = Field(None, description="Email address")
     password: str
 
 
@@ -49,6 +50,7 @@ class TokenResponse(BaseModel):
     role: UserRole
     email: str
     full_name: str
+    user: Optional[UserOut] = None
     model_config = {"from_attributes": True}
 
 
@@ -72,6 +74,21 @@ class UserOut(BaseModel):
     verified_at: Optional[datetime] = None
     created_at: datetime
     model_config = {"from_attributes": True}
+
+    @computed_field
+    @property
+    def campus(self) -> str:
+        return self.school_name or "FUT Minna"
+
+    @computed_field
+    @property
+    def wallet_balance(self) -> float:
+        return 0.0
+
+    @computed_field
+    @property
+    def points(self) -> int:
+        return 50
 
 
 class UserUpdate(BaseModel):
@@ -216,6 +233,33 @@ class ProductOut(BaseModel):
     images: List[ProductImageOut] = []
     category: Optional[CategoryOut] = None
     model_config = {"from_attributes": True}
+
+    @computed_field
+    @property
+    def price(self) -> float:
+        return round(self.price_kobo / 100.0, 2)
+
+    @computed_field
+    @property
+    def image_url(self) -> str:
+        if self.images and len(self.images) > 0:
+            return self.images[0].image_url
+        return "https://images.unsplash.com/photo-1526170375885-4d8ecf77b99f?w=600&auto=format&fit=crop&q=80"
+
+    @computed_field
+    @property
+    def seller_id(self) -> str:
+        return str(self.vendor_id)
+
+    @computed_field
+    @property
+    def seller_name(self) -> str:
+        return "Verified Student Seller"
+
+    @computed_field
+    @property
+    def campus(self) -> str:
+        return self.location or "FUT Minna"
 
 
 # --- Pickup Hub Schemas ---

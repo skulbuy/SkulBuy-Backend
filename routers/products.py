@@ -63,15 +63,30 @@ def get_product(product_id: UUID, db: Session = Depends(get_db)):
 def create_product(
     prod_in: schemas.ProductCreate,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(auth.require_vendor)
+    current_user: models.User = Depends(auth.get_current_user)
 ):
     """
-    Creates a new product listing (Vendor only).
+    Creates a new product listing (Any authenticated student can list items).
     """
     # Verify category exists
     category = db.query(models.Category).filter(models.Category.id == prod_in.category_id).first()
     if not category:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Category not found")
+
+    # Auto-provision vendor profile if not already present
+    if not current_user.vendor_profile:
+        store_name = f"{current_user.full_name}'s Campus Store"
+        # Check unique store name
+        existing_store = db.query(models.VendorProfile).filter(models.VendorProfile.store_name == store_name).first()
+        if existing_store:
+            store_name = f"{current_user.full_name} ({str(current_user.id)[:4]})"
+        vendor_prof = models.VendorProfile(
+            user_id=current_user.id,
+            store_name=store_name,
+            store_description="Student seller at FUT Minna",
+        )
+        db.add(vendor_prof)
+        db.commit()
 
     product = models.Product(
         vendor_id=current_user.id,
@@ -82,7 +97,7 @@ def create_product(
         price_kobo=prod_in.price_kobo,
         stock=prod_in.stock,
         status=models.ProductStatus.ACTIVE,
-        location=prod_in.location or current_user.location,
+        location=prod_in.location or current_user.location or "FUT Minna Bosso/Gidan Kwano",
         prep_time_minutes=prod_in.prep_time_minutes,
     )
     db.add(product)
@@ -108,7 +123,7 @@ def update_product(
     product_id: UUID,
     prod_in: schemas.ProductUpdate,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(auth.require_vendor)
+    current_user: models.User = Depends(auth.get_current_user)
 ):
     """Updates product attributes (Owner vendor or Admin)."""
     product = db.query(models.Product).filter(models.Product.id == product_id).first()
@@ -149,7 +164,7 @@ def update_product(
 def delete_product(
     product_id: UUID,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(auth.require_vendor)
+    current_user: models.User = Depends(auth.get_current_user)
 ):
     """Marks a product as REMOVED (soft delete)."""
     product = db.query(models.Product).filter(models.Product.id == product_id).first()

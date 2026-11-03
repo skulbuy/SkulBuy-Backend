@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi import FastAPI, APIRouter, Depends, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.routing import APIRoute
 from sqlalchemy.orm import Session
@@ -6,6 +6,8 @@ from sqlalchemy import text
 
 from database import engine, Base, get_db
 import models
+import schemas
+from routers.products import list_products, get_product, create_product, update_product, delete_product
 
 # Routers
 from routers import (
@@ -22,6 +24,7 @@ from routers import (
     reviews,
     admin,
 )
+import seed_data
 
 # Initialize Database Tables (Gracefully attempts connection)
 try:
@@ -70,6 +73,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+listings_router = APIRouter(prefix="/listings", tags=["Listings"])
+listings_router.add_api_route("", list_products, methods=["GET"], response_model=list[schemas.ProductOut])
+listings_router.add_api_route("/{product_id}", get_product, methods=["GET"], response_model=schemas.ProductOut)
+listings_router.add_api_route("", create_product, methods=["POST"], response_model=schemas.ProductOut, status_code=status.HTTP_201_CREATED)
+listings_router.add_api_route("/{product_id}", update_product, methods=["PATCH"], response_model=schemas.ProductOut)
+listings_router.add_api_route("/{product_id}", delete_product, methods=["DELETE"], status_code=status.HTTP_204_NO_CONTENT)
+
 # Mount API Routers (supporting both /api and /api/v1 for seamless frontend compatibility)
 for prefix in ["/api/v1", "/api"]:
     app.include_router(auth.router, prefix=prefix)
@@ -77,7 +87,7 @@ for prefix in ["/api/v1", "/api"]:
     app.include_router(vendors.router, prefix=prefix)
     app.include_router(categories.router, prefix=prefix)
     app.include_router(products.router, prefix=prefix)
-    app.include_router(products.router, prefix=f"{prefix}/listings")
+    app.include_router(listings_router, prefix=prefix)
     app.include_router(pickup_hubs.router, prefix=prefix)
     app.include_router(orders.router, prefix=prefix)
     app.include_router(payments.router, prefix=prefix)
@@ -85,6 +95,14 @@ for prefix in ["/api/v1", "/api"]:
     app.include_router(disputes.router, prefix=prefix)
     app.include_router(reviews.router, prefix=prefix)
     app.include_router(admin.router, prefix=prefix)
+
+@app.post("/api/seed", tags=["System"])
+@app.post("/api/v1/seed", tags=["System"])
+@app.get("/api/seed", tags=["System"])
+@app.get("/api/v1/seed", tags=["System"])
+def seed_database_endpoint(db: Session = Depends(get_db)):
+    """Seeds the database with categories, pickup hubs, and initial student listings."""
+    return seed_data.run_seed(db)
 
 @app.get("/health", tags=["System"])
 async def health_check(db: Session = Depends(get_db)):

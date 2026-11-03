@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 
@@ -10,10 +10,10 @@ from services import utils, auth
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
-@router.post("/register", response_model=schemas.UserOut, status_code=status.HTTP_201_CREATED)
+@router.post("/register", response_model=schemas.TokenResponse, status_code=status.HTTP_201_CREATED)
 def register(user_in: schemas.UserRegister, db: Session = Depends(get_db)):
     """
-    Registers a new student user at FUT Minna.
+    Registers a new student user at FUT Minna and automatically issues authentication tokens.
     """
     # Check duplicate email
     if db.query(models.User).filter(models.User.email == user_in.email).first():
@@ -53,7 +53,19 @@ def register(user_in: schemas.UserRegister, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(user)
 
-    return user
+    access_token_data = auth.create_access_token({"sub": str(user.id), "email": user.email, "role": user.role.value})
+    refresh_token = auth.create_refresh_token(db, user.id)
+
+    return schemas.TokenResponse(
+        access_token=access_token_data["access_token"],
+        token_type="Bearer",
+        refresh_token=refresh_token,
+        user_id=user.id,
+        role=user.role,
+        email=user.email,
+        full_name=user.full_name,
+        user=user,
+    )
 
 @router.post("/verify-matric", response_model=schemas.UserOut)
 def verify_matric(
@@ -82,20 +94,38 @@ def verify_matric(
     return current_user
 
 @router.post("/login", response_model=schemas.TokenResponse)
-def login(
-    form_data: OAuth2PasswordRequestForm = Depends(),
+async def login(
+    request: Request,
     db: Session = Depends(get_db)
 ):
     """
-    Login endpoint supporting standard OAuth2 form credentials (username=email or matric_no, password).
+    Login endpoint supporting both JSON payload and standard OAuth2 form credentials.
     Returns JWT access token and cryptographic rotating refresh token.
     """
-    login_id = form_data.username.strip()
+    login_id = ""
+    password = ""
+    content_type = request.headers.get("content-type", "")
+
+    if "application/json" in content_type:
+        body = await request.json()
+        login_id = (body.get("username") or body.get("email") or "").strip()
+        password = body.get("password") or ""
+    else:
+        form = await request.form()
+        login_id = (form.get("username") or form.get("email") or "").strip()
+        password = form.get("password") or ""
+
+    if not login_id or not password:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Email/username and password are required.",
+        )
+
     user = db.query(models.User).filter(
-        (models.User.email == login_id) | (models.User.matric_no == login_id)
+        (models.User.email.ilike(login_id)) | (models.User.matric_no == login_id)
     ).first()
 
-    if not user or not utils.verify_password(form_data.password, user.password_hash):
+    if not user or not utils.verify_password(password, user.password_hash):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username/email or password.",
@@ -119,6 +149,7 @@ def login(
         role=user.role,
         email=user.email,
         full_name=user.full_name,
+        user=user,
     )
 
 @router.post("/refresh", response_model=schemas.TokenResponse)
