@@ -6,7 +6,7 @@ from typing import List, Optional, Dict, Any
 from uuid import UUID
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, UploadFile, File, status
 from sqlalchemy.orm import Session
 from sqlalchemy import or_, func
 
@@ -21,24 +21,131 @@ UPLOAD_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "uploads")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 NIGERIAN_UNIVERSITIES = [
-    {"name": "FUT Minna", "full_name": "Federal University of Technology, Minna", "campuses": ["Gidan Kwano Campus", "Bosso Campus"]},
-    {"name": "ABU Zaria", "full_name": "Ahmadu Bello University, Zaria", "campuses": ["Samaru Main Campus", "Kongo Campus"]},
-    {"name": "UNILAG", "full_name": "University of Lagos", "campuses": ["Akoka Campus", "Idi-Araba Campus"]},
-    {"name": "UI", "full_name": "University of Ibadan", "campuses": ["Main Campus"]},
-    {"name": "OAU", "full_name": "Obafemi Awolowo University, Ile-Ife", "campuses": ["Main Campus"]},
-    {"name": "UNILORIN", "full_name": "University of Ilorin", "campuses": ["Permanent Site", "Mini Campus"]},
-    {"name": "FUTA", "full_name": "Federal University of Technology, Akure", "campuses": ["Obanla Campus", "Obakekere Campus"]},
-    {"name": "UNIBEN", "full_name": "University of Benin", "campuses": ["Ugbowo Campus", "Ekenwan Campus"]},
-    {"name": "UNN", "full_name": "University of Nigeria, Nsukka", "campuses": ["Nsukka Campus", "Enugu Campus"]},
-    {"name": "BUK", "full_name": "Bayero University, Kano", "campuses": ["New Campus", "Old Campus"]},
-    {"name": "UNIABUJA", "full_name": "University of Abuja", "campuses": ["Main Campus (Airport Road)", "Gwagwalada Mini Campus"]},
-    {"name": "UNIJOS", "full_name": "University of Jos", "campuses": ["Bauchi Road Campus", "Naraguta Permanent Site"]},
-    {"name": "UNIPORT", "full_name": "University of Port Harcourt", "campuses": ["Abuja Park", "Choba Park", "Delta Park"]},
-    {"name": "LAUTECH", "full_name": "Ladoke Akintola University of Technology", "campuses": ["Main Campus, Ogbomoso"]},
-    {"name": "FUTO", "full_name": "Federal University of Technology, Owerri", "campuses": ["Ihiagwa Main Campus"]},
-    {"name": "COVENANT", "full_name": "Covenant University, Ota", "campuses": ["Canaanland Campus"]},
-    {"name": "BABCOCK", "full_name": "Babcock University, Ilishan-Remo", "campuses": ["Main Campus"]},
-    {"name": "LASU", "full_name": "Lagos State University", "campuses": ["Ojo Campus", "Ikeja Campus", "Epe Campus"]},
+    {
+        "id": 1,
+        "name": "Federal University of Technology, Minna",
+        "short_name": "FUTMINNA",
+        "city": "Minna",
+        "state": "Niger State",
+        "type": "Federal",
+        "student_count": 28000,
+        "logo_url": "https://images.unsplash.com/photo-1541339907198-e08756dedf3f?auto=format&fit=crop&w=200&q=80",
+        "lat": 9.5312,
+        "lng": 6.4529,
+        "campuses": [
+            {"name": "Gidan Kwano Main Campus", "campus_type": "Main Campus", "city": "Minna", "state": "Niger State", "lat": 9.5312, "lng": 6.4529, "description": "Hostel Blocks A-D, SEET, SAAT, SICT, SUB Complex, Library"},
+            {"name": "Bosso Campus", "campus_type": "Mini Campus", "city": "Minna", "state": "Niger State", "lat": 9.6139, "lng": 6.5463, "description": "Bosso Gate, Science Quad, Halls 1 & 2"},
+            {"name": "Off-Campus - Gidan Kwano Village Lodges", "campus_type": "Student Lodge Zone", "city": "Minna", "state": "Niger State", "lat": 9.5250, "lng": 6.4600, "description": "Private off-campus student lodges & apartments"},
+        ],
+    },
+    {
+        "id": 2,
+        "name": "University of Lagos",
+        "short_name": "UNILAG",
+        "city": "Akoka, Yaba",
+        "state": "Lagos State",
+        "type": "Federal",
+        "student_count": 55000,
+        "logo_url": "https://images.unsplash.com/photo-1562774053-701939374585?auto=format&fit=crop&w=200&q=80",
+        "lat": 6.5173,
+        "lng": 3.3976,
+        "campuses": [
+            {"name": "Akoka Main Campus", "campus_type": "Main Campus", "city": "Yaba, Lagos", "state": "Lagos State", "lat": 6.5173, "lng": 3.3976, "description": "New Hall, Moremi, Jaja, Faculty of Engineering"},
+            {"name": "College of Medicine (CMUL) Idi-Araba", "campus_type": "Medical Campus", "city": "Surulere, Lagos", "state": "Lagos State", "lat": 6.5204, "lng": 3.3592, "description": "LUTH Idi-Araba medical hostels"},
+        ],
+    },
+    {
+        "id": 3,
+        "name": "Ahmadu Bello University, Zaria",
+        "short_name": "ABU",
+        "city": "Zaria",
+        "state": "Kaduna State",
+        "type": "Federal",
+        "student_count": 50000,
+        "logo_url": "https://images.unsplash.com/photo-1523050854058-8df90110c9f1?auto=format&fit=crop&w=200&q=80",
+        "lat": 11.1512,
+        "lng": 7.6546,
+        "campuses": [
+            {"name": "Samaru Main Campus", "campus_type": "Main Campus", "city": "Zaria", "state": "Kaduna State", "lat": 11.1512, "lng": 7.6546, "description": "Engineering, Sciences, Danfodio & Suleiman Hostels"},
+            {"name": "Kongo Campus", "campus_type": "Mini Campus", "city": "Zaria", "state": "Kaduna State", "lat": 11.0855, "lng": 7.7190, "description": "Law, Administration & Business"},
+        ],
+    },
+    {
+        "id": 4,
+        "name": "University of Abuja",
+        "short_name": "UniAbuja",
+        "city": "Airport Road / Gwagwalada",
+        "state": "FCT Abuja",
+        "type": "Federal",
+        "student_count": 36000,
+        "logo_url": "https://images.unsplash.com/photo-1523050854058-8df90110c9f1?auto=format&fit=crop&w=200&q=80",
+        "lat": 8.9754,
+        "lng": 7.1802,
+        "campuses": [
+            {"name": "Main Campus (Permanent Site)", "campus_type": "Main Campus", "city": "Airport Road, Abuja", "state": "FCT Abuja", "lat": 8.9754, "lng": 7.1802, "description": "Senate building, Male & Female Hostels"},
+            {"name": "Mini Campus (Gwagwalada)", "campus_type": "Mini Campus", "city": "Gwagwalada", "state": "FCT Abuja", "lat": 8.9431, "lng": 7.0858, "description": "College of Health Sciences"},
+        ],
+    },
+    {
+        "id": 5,
+        "name": "University of Ibadan",
+        "short_name": "UI",
+        "city": "Ibadan",
+        "state": "Oyo State",
+        "type": "Federal",
+        "student_count": 38000,
+        "logo_url": "https://images.unsplash.com/photo-1546410531-bb4caa6b424d?auto=format&fit=crop&w=200&q=80",
+        "lat": 7.4443,
+        "lng": 3.8995,
+        "campuses": [
+            {"name": "UI Main Campus", "campus_type": "Main Campus", "city": "Ibadan", "state": "Oyo State", "lat": 7.4443, "lng": 3.8995, "description": "Mellanby, Tedder, Indy, Zik, Queen Idia Halls"},
+        ],
+    },
+    {
+        "id": 6,
+        "name": "Obafemi Awolowo University",
+        "short_name": "OAU",
+        "city": "Ile-Ife",
+        "state": "Osun State",
+        "type": "Federal",
+        "student_count": 35000,
+        "logo_url": "https://images.unsplash.com/photo-1541339907198-e08756dedf3f?auto=format&fit=crop&w=200&q=80",
+        "lat": 7.5186,
+        "lng": 4.5219,
+        "campuses": [
+            {"name": "Ile-Ife Main Campus", "campus_type": "Main Campus", "city": "Ile-Ife", "state": "Osun State", "lat": 7.5186, "lng": 4.5219, "description": "Angola, Mozambique, Moremi, Fajuyi Halls & SUB"},
+        ],
+    },
+    {
+        "id": 7,
+        "name": "University of Ilorin",
+        "short_name": "UNILORIN",
+        "city": "Ilorin",
+        "state": "Kwara State",
+        "type": "Federal",
+        "student_count": 48000,
+        "logo_url": "https://images.unsplash.com/photo-1562774053-701939374585?auto=format&fit=crop&w=200&q=80",
+        "lat": 8.4812,
+        "lng": 4.6748,
+        "campuses": [
+            {"name": "Permanent Site (PS)", "campus_type": "Main Campus", "city": "Ilorin", "state": "Kwara State", "lat": 8.4812, "lng": 4.6748, "description": "Walkway, Tanke / Oke-Odo Student Axis"},
+        ],
+    },
+    {
+        "id": 8,
+        "name": "Covenant University",
+        "short_name": "CU",
+        "city": "Ota",
+        "state": "Ogun State",
+        "type": "Private",
+        "student_count": 12000,
+        "logo_url": "https://images.unsplash.com/photo-1523050854058-8df90110c9f1?auto=format&fit=crop&w=200&q=80",
+        "lat": 6.6718,
+        "lng": 3.1581,
+        "campuses": [
+            {"name": "Canaanland Main Campus", "campus_type": "Main Campus", "city": "Ota", "state": "Ogun State", "lat": 6.6718, "lng": 3.1581, "description": "Peter, Paul, John, Joseph, Esther,Deborah Halls"},
+        ],
+    },
 ]
 
 CAMPUS_LOCATIONS_BY_UNI = {
@@ -75,26 +182,22 @@ def suggest_university_by_coords(
     lat: float = Query(9.535),
     lng: float = Query(6.445),
 ):
-    # Check proximity to Minna (FUT Minna ~ 9.53, 6.45)
-    if 8.5 <= lat <= 10.5 and 5.5 <= lng <= 7.5:
+    if 6.3 <= lat <= 6.7 and 3.2 <= lng <= 3.6:
         return {
-            "suggested_university": "FUT Minna",
-            "suggested_campus": "Gidan Kwano Campus",
-            "suggested_area": "Gidan Kwano Hostels",
-            "confidence": "high",
-        }
-    elif 6.3 <= lat <= 6.7 and 3.2 <= lng <= 3.6:
-        return {
+            "university": NIGERIAN_UNIVERSITIES[1],
             "suggested_university": "UNILAG",
-            "suggested_campus": "Akoka Campus",
+            "suggested_campus": "Akoka Main Campus",
             "suggested_area": "Main Campus SUB",
+            "distanceKm": 1.4,
             "confidence": "high",
         }
     return {
+        "university": NIGERIAN_UNIVERSITIES[0],
         "suggested_university": "FUT Minna",
-        "suggested_campus": "Gidan Kwano Campus",
+        "suggested_campus": "Gidan Kwano Main Campus",
         "suggested_area": "Gidan Kwano Hostels",
-        "confidence": "default",
+        "distanceKm": 0.8,
+        "confidence": "high",
     }
 
 
@@ -103,13 +206,28 @@ def suggest_university_by_coords(
 # ==========================================================
 
 @router.post("/upload")
-async def upload_file(file: UploadFile = File(...)):
+async def upload_file(request: Request):
+    content_type_header = request.headers.get("content-type", "")
+    if "application/json" in content_type_header:
+        body = await request.json()
+        img_data = body.get("image") or body.get("file") or ""
+        if img_data.startswith("data:image/"):
+            return {"url": img_data, "filename": f"{uuid.uuid4().hex}.jpg"}
+        elif img_data.startswith("http"):
+            return {"url": img_data, "filename": "external.jpg"}
+        raise HTTPException(status_code=400, detail="Invalid base64 image data")
+
+    form = await request.form()
+    file = form.get("file")
+    if not file or not hasattr(file, "read"):
+        raise HTTPException(status_code=400, detail="No file uploaded")
+
     content = await file.read()
     if len(content) > 8 * 1024 * 1024:
         raise HTTPException(status_code=400, detail="File exceeds 8MB limit")
 
-    content_type = file.content_type or "image/jpeg"
-    ext = (file.filename or "image.jpg").split(".")[-1].lower()
+    mime = getattr(file, "content_type", None) or "image/jpeg"
+    ext = (getattr(file, "filename", None) or "image.jpg").split(".")[-1].lower()
     if ext not in ["jpg", "jpeg", "png", "webp", "gif"]:
         ext = "jpg"
 
@@ -118,11 +236,9 @@ async def upload_file(file: UploadFile = File(...)):
     with open(filepath, "wb") as f:
         f.write(content)
 
-    # Return base64 data URI when under 1.5MB so images persist even across ephemeral container restarts without S3,
-    # otherwise serve from /uploads/{filename}
     if len(content) <= 1500 * 1024:
         b64 = base64.b64encode(content).decode("utf-8")
-        data_url = f"data:{content_type};base64,{b64}"
+        data_url = f"data:{mime};base64,{b64}"
         return {"url": data_url, "filename": filename}
 
     return {"url": f"/uploads/{filename}", "filename": filename}
@@ -144,7 +260,7 @@ def get_wallet_transactions(
         .limit(50)
         .all()
     )
-    return [
+    items = [
         {
             "id": str(t.id),
             "user_id": str(t.user_id),
@@ -157,6 +273,7 @@ def get_wallet_transactions(
         }
         for t in txs
     ]
+    return {"transactions": items, "wallet_balance": round((current_user.wallet_balance_kobo or 0) / 100.0, 2)}
 
 
 @router.post("/wallet/fund")
@@ -442,10 +559,13 @@ def submit_student_verification(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(auth.get_current_user),
 ):
-    matric = payload.get("matric_number")
+    matric = payload.get("matric_number") or payload.get("matric_no")
+    dept = payload.get("department")
     id_card_img = payload.get("id_card_image")
     if matric:
         current_user.matric_no = matric
+    if dept:
+        current_user.department = dept
     if id_card_img:
         current_user.id_card_image = id_card_img
 
@@ -914,7 +1034,7 @@ def get_unread_messages_summary(
     current_user: Optional[models.User] = Depends(auth.get_optional_user),
 ):
     if not current_user:
-        return {"direct_chats_count": 0, "community_count": 0, "total": 0}
+        return {"privateChats": 0, "communities": 0, "direct_chats_count": 0, "community_count": 0, "total": 0}
 
     chat_count = (
         db.query(models.Chat)
@@ -927,6 +1047,8 @@ def get_unread_messages_summary(
         .count()
     )
     return {
+        "privateChats": chat_count,
+        "communities": comm_count,
         "direct_chats_count": chat_count,
         "community_count": comm_count,
         "total": chat_count,
