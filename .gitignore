@@ -1,2 +1,7 @@
 .env
-.env.example
+.venv/
+__pycache__/
+*.py[cod]
+*$py.class
+*.sqlite3
+.DS_Store

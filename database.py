@@ -27,6 +27,18 @@ db_url = settings.DB_URL.strip()
 if db_url.startswith("postgres://"):
     db_url = db_url.replace("postgres://", "postgresql://", 1)
 
+# Ensure proper PostgreSQL driver selection (fallback gracefully if only psycopg2 is installed)
+if db_url.startswith("postgresql://"):
+    try:
+        import psycopg  # noqa: F401
+        db_url = db_url.replace("postgresql://", "postgresql+psycopg://", 1)
+    except (ImportError, ModuleNotFoundError):
+        try:
+            import psycopg2  # noqa: F401
+            db_url = db_url.replace("postgresql://", "postgresql+psycopg2://", 1)
+        except (ImportError, ModuleNotFoundError):
+            pass
+
 is_sqlite = db_url.startswith("sqlite")
 connect_args = {"check_same_thread": False} if is_sqlite else {}
 engine_kwargs = {
