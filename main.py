@@ -62,26 +62,29 @@ app.add_middleware(
         "http://localhost:8000",
         "http://127.0.0.1:3000",
         "http://127.0.0.1:8000",
+        "https://skulbuy-backend-f36c6.containers.snapdeploy.app",
+        "*"
     ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Mount API v1 Routers
-API_V1_PREFIX = "/api/v1"
-app.include_router(auth.router, prefix=API_V1_PREFIX)
-app.include_router(users.router, prefix=API_V1_PREFIX)
-app.include_router(vendors.router, prefix=API_V1_PREFIX)
-app.include_router(categories.router, prefix=API_V1_PREFIX)
-app.include_router(products.router, prefix=API_V1_PREFIX)
-app.include_router(pickup_hubs.router, prefix=API_V1_PREFIX)
-app.include_router(orders.router, prefix=API_V1_PREFIX)
-app.include_router(payments.router, prefix=API_V1_PREFIX)
-app.include_router(delivery.router, prefix=API_V1_PREFIX)
-app.include_router(disputes.router, prefix=API_V1_PREFIX)
-app.include_router(reviews.router, prefix=API_V1_PREFIX)
-app.include_router(admin.router, prefix=API_V1_PREFIX)
+# Mount API Routers (supporting both /api and /api/v1 for seamless frontend compatibility)
+for prefix in ["/api/v1", "/api"]:
+    app.include_router(auth.router, prefix=prefix)
+    app.include_router(users.router, prefix=prefix)
+    app.include_router(vendors.router, prefix=prefix)
+    app.include_router(categories.router, prefix=prefix)
+    app.include_router(products.router, prefix=prefix)
+    app.include_router(products.router, prefix=f"{prefix}/listings")
+    app.include_router(pickup_hubs.router, prefix=prefix)
+    app.include_router(orders.router, prefix=prefix)
+    app.include_router(payments.router, prefix=prefix)
+    app.include_router(delivery.router, prefix=prefix)
+    app.include_router(disputes.router, prefix=prefix)
+    app.include_router(reviews.router, prefix=prefix)
+    app.include_router(admin.router, prefix=prefix)
 
 @app.get("/health", tags=["System"])
 async def health_check(db: Session = Depends(get_db)):
