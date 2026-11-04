@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     CAMPUS_NAME: str = "FUT Minna"
     PROTECTION_WINDOW_HOURS: int = 24
     CLOUDINARY_URL: str = ""
+    GEMINI_API_KEY: str = ""
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

@@ -1669,62 +1669,75 @@ async def skully_ai_chat(
     )
 
     msg_lower = user_message.lower()
-    matched_products = [
-        p for p in products
-        if any(tok in (p.title.lower() + " " + p.description.lower() + " " + p.category_name.lower()) for tok in msg_lower.split() if len(tok) >= 3)
-    ]
+    matched_products = []
+    for p in products:
+        cat_name = p.category.name.lower() if p.category else ""
+        text_corpus = f"{p.title.lower()} {p.description.lower()} {cat_name}"
+        if any(tok in text_corpus for tok in msg_lower.split() if len(tok) >= 3):
+            matched_products.append(p)
+
     recommended = (matched_products or products)[:3]
 
-    recommended_listings = [
-        {
+    recommended_listings = []
+    for p in recommended:
+        img_list = [img.image_url for img in p.images] if p.images else []
+        first_img = img_list[0] if img_list else None
+        seller_name = p.vendor.full_name if p.vendor else "Campus Seller"
+        seller_verified = bool(p.vendor.is_verified) if p.vendor else False
+        recommended_listings.append({
             "id": str(p.id),
             "title": p.title,
             "price": round(p.price_kobo / 100.0, 2),
-            "condition": p.condition.value if hasattr(p.condition, "value") else str(p.condition),
+            "condition": getattr(p.condition, "value", str(p.condition)),
             "campus_location": p.location or "Campus Hub",
-            "seller_name": p.seller_name,
-            "seller_verified": p.seller_verified,
-            "image": p.images[0] if p.images else None,
-            "image_url": p.images[0] if p.images else None,
-            "images": p.images,
-        }
-        for p in recommended
-    ]
+            "seller_name": seller_name,
+            "seller_verified": seller_verified,
+            "image": first_img,
+            "image_url": first_img,
+            "images": img_list,
+        })
 
-    gemini_api_key = os.getenv("GEMINI_API_KEY", "")
+    gemini_api_key = (settings.GEMINI_API_KEY or os.getenv("GEMINI_API_KEY", "")).strip()
     if gemini_api_key:
-        try:
-            catalog_summary = "\n".join(
-                [f"- {p.title}: ₦{p.price_kobo/100:,.0f} ({p.condition.value}) at {p.location}" for p in products[:10]]
-            )
-            system_prompt = (
-                f"You are Skully, the official campus marketplace assistant for {university} on SkulBuy. "
-                f"Keep answers concise, friendly, and grounded in student life and escrow safety (4-digit Handover PIN). "
-                f"Live marketplace inventory:\n{catalog_summary}"
-            )
-            async with httpx.AsyncClient(timeout=12.0) as client:
-                resp = await client.post(
-                    f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={gemini_api_key}",
-                    json={
-                        "contents": [{"parts": [{"text": f"{system_prompt}\n\nStudent asks: {user_message}"}]}]
-                    },
-                )
-                if resp.status_code == 200:
-                    data = resp.json()
-                    reply_text = (
-                        data.get("candidates", [{}])[0]
-                        .get("content", {})
-                        .get("parts", [{}])[0]
-                        .get("text", "")
+        catalog_summary = "\n".join(
+            [f"- {p.title}: ₦{p.price_kobo/100:,.0f} ({getattr(p.condition, 'value', p.condition)}) at {p.location or 'Campus Hub'}" for p in products[:10]]
+        )
+        system_prompt = (
+            f"You are Skully, the official, enthusiastic, and witty AI campus assistant for {university} on SkulBuy.\n"
+            f"Core mission:\n"
+            f"- Guide students to live campus deals on laptops, phones, textbooks, provisions, and hostel gear.\n"
+            f"- Educate students on safe trading using SkulBuy Campus Escrow and the 4-digit Handover PIN.\n"
+            f"- Ground your recommendations in the current live inventory below when relevant:\n"
+            f"{catalog_summary}\n\n"
+            f"Always keep responses concise, friendly, student-relatable, and safety-first."
+        )
+
+        candidate_models = ["gemini-flash-lite-latest", "gemini-3.5-flash", "gemini-3.8-flash"]
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            for model_name in candidate_models:
+                try:
+                    resp = await client.post(
+                        f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={gemini_api_key}",
+                        json={
+                            "contents": [{"parts": [{"text": f"{system_prompt}\n\nStudent asks: {user_message}"}]}]
+                        },
                     )
-                    if reply_text:
-                        return {
-                            "reply": reply_text,
-                            "recommended_listings": recommended_listings,
-                            "recommendations": {"listings": recommended_listings, "meetups": []},
-                        }
-        except Exception:
-            pass
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        reply_text = (
+                            data.get("candidates", [{}])[0]
+                            .get("content", {})
+                            .get("parts", [{}])[0]
+                            .get("text", "")
+                        )
+                        if reply_text:
+                            return {
+                                "reply": reply_text.strip(),
+                                "recommended_listings": recommended_listings,
+                                "recommendations": {"listings": recommended_listings, "meetups": []},
+                            }
+                except Exception:
+                    continue
 
     # Deterministic database-grounded response when GEMINI_API_KEY is not configured
     if "escrow" in msg_lower or "safe" in msg_lower or "pin" in msg_lower:
